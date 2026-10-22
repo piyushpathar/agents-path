@@ -5,7 +5,6 @@ export interface GeoFetchOptions {
   headers?: Record<string, string>;
   body?: string;
   useIndiaProxy?: boolean;
-  useIndiaRelay?: boolean;
   timeoutMs?: number;
   maxRetries?: number;
 }
@@ -33,17 +32,3 @@ export interface GeoFetchFailure {
 }
 
 export type GeoFetchResult = GeoFetchSuccess | GeoFetchFailure;
-
-export interface RawFetchResponse {
-  status: number;
-  contentType: string;
-  retryAfter: string | null;
-  body: string;
-}
-
-export interface RelayRequest {
-  url: string;
-  method: "GET" | "POST";
-  headers: Record<string, string>;
-  body?: string;
-}

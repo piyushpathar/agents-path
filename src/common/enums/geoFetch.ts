@@ -1,7 +1,6 @@
 export enum FetchRoute {
   OfficialApi = "official-api",
   IndiaProxy = "india-proxy",
-  IndiaRelay = "india-relay",
   Direct = "direct",
 }
 
