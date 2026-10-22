@@ -21,6 +21,8 @@ export const INDIA_BROWSER_HEADERS: Readonly<Record<string, string>> = {
 
 export const GEO_FETCH_ENV = {
   indiaProxyUrl: "INDIA_PROXY_URL",
+  indiaRelayUrl: "INDIA_RELAY_URL",
+  indiaRelayToken: "INDIA_RELAY_TOKEN",
   dataGovInApiKey: "DATA_GOV_IN_API_KEY",
   apiSetuClientId: "API_SETU_CLIENT_ID",
   apiSetuApiKey: "API_SETU_API_KEY",
@@ -45,7 +47,7 @@ export const OFFICIAL_API_BASE_URLS: Readonly<Record<OfficialApiProvider, string
 
 export const GEO_FETCH_MESSAGES = {
   geoBlocked:
-    "Request blocked by the source site (likely non-Indian or datacenter IP). Set INDIA_PROXY_URL or use the official API.",
+    "Request blocked by the source site (likely non-Indian or datacenter IP). Set INDIA_RELAY_URL, INDIA_PROXY_URL or use the official API.",
   rateLimited: "Source site is rate limiting requests. Try again later.",
   timeout: "Source site did not respond in time.",
   missingApiKey: "Official API key is not configured.",

@@ -15,6 +15,8 @@ import type {
   GeoFetchOptions,
   GeoFetchResult,
   OfficialApiRequest,
+  RawFetchResponse,
+  RelayRequest,
 } from "@/common/interfaces/geoFetch";
 
 const hostQueues = new Map<string, Promise<void>>();
@@ -69,38 +71,86 @@ const failure = (status: number, route: FetchRoute, code: GeoFetchErrorCode): Ge
   return { ok: false, status, route, code, message: messages[code] };
 };
 
+const getIndiaRelay = (): { url: string; token: string } | null => {
+  const url = process.env[GEO_FETCH_ENV.indiaRelayUrl];
+  const token = process.env[GEO_FETCH_ENV.indiaRelayToken];
+  return url && token ? { url, token } : null;
+};
+
+const sendViaRelay = async (
+  relay: { url: string; token: string },
+  request: RelayRequest,
+  timeoutMs: number,
+): Promise<RawFetchResponse> => {
+  const response = await fetch(relay.url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${relay.token}` },
+    body: JSON.stringify(request),
+    cache: "no-store",
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!response.ok) {
+    return { status: response.status === 401 ? 502 : response.status, contentType: "", retryAfter: null, body: "" };
+  }
+  return (await response.json()) as RawFetchResponse;
+};
+
+const sendDirect = async (
+  request: RelayRequest,
+  timeoutMs: number,
+  dispatcher: Dispatcher | null,
+): Promise<RawFetchResponse> => {
+  const response = await fetch(request.url, {
+    method: request.method,
+    headers: request.headers,
+    body: request.body,
+    redirect: "follow",
+    cache: "no-store",
+    signal: AbortSignal.timeout(timeoutMs),
+    ...(dispatcher && { dispatcher }),
+  } as RequestInit);
+  return {
+    status: response.status,
+    contentType: response.headers.get("content-type") ?? "",
+    retryAfter: response.headers.get("retry-after"),
+    body: response.ok ? await response.text() : "",
+  };
+};
+
 export const geoFetch = async (url: string, options: GeoFetchOptions = {}): Promise<GeoFetchResult> => {
   const { host, origin } = new URL(url);
-  const dispatcher: Dispatcher | null = options.useIndiaProxy === false ? null : getIndiaProxyAgent();
-  const route = dispatcher ? FetchRoute.IndiaProxy : FetchRoute.Direct;
+  const relay = options.useIndiaRelay === false ? null : getIndiaRelay();
+  const dispatcher: Dispatcher | null =
+    relay || options.useIndiaProxy === false ? null : getIndiaProxyAgent();
+  const route = relay ? FetchRoute.IndiaRelay : dispatcher ? FetchRoute.IndiaProxy : FetchRoute.Direct;
   const maxRetries = options.maxRetries ?? GEO_FETCH_LIMITS.maxRetries;
-  const headers = { ...INDIA_BROWSER_HEADERS, Referer: `${origin}/`, ...options.headers };
+  const timeoutMs = options.timeoutMs ?? GEO_FETCH_LIMITS.timeoutMs;
+  const request: RelayRequest = {
+    url,
+    method: options.method ?? "GET",
+    headers: { ...INDIA_BROWSER_HEADERS, Referer: `${origin}/`, ...options.headers },
+    body: options.body,
+  };
 
   for (let attempt = 0; ; attempt++) {
     await waitForHostSlot(host);
     try {
-      const response = await fetch(url, {
-        method: options.method ?? "GET",
-        headers,
-        body: options.body,
-        redirect: "follow",
-        cache: "no-store",
-        signal: AbortSignal.timeout(options.timeoutMs ?? GEO_FETCH_LIMITS.timeoutMs),
-        ...(dispatcher && { dispatcher }),
-      } as RequestInit);
+      const response = relay
+        ? await sendViaRelay(relay, request, timeoutMs)
+        : await sendDirect(request, timeoutMs, dispatcher);
 
-      if (response.ok) {
+      if (response.status >= 200 && response.status < 300) {
         return {
           ok: true,
           status: response.status,
           route,
-          contentType: response.headers.get("content-type") ?? "",
-          body: await response.text(),
+          contentType: response.contentType,
+          body: response.body,
         };
       }
 
       if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < maxRetries) {
-        await sleep(backoffMs(attempt, response.headers.get("retry-after")));
+        await sleep(backoffMs(attempt, response.retryAfter));
         continue;
       }
 
